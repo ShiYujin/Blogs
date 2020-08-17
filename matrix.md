@@ -57,7 +57,70 @@ $$
     0 & 0 & 0 & 1 \\
 \end{pmatrix}
 $$
-其逆矩阵${\bf{R}}^{-1}_i(\phi)={\bf{R}}_i(-\phi)$。
+其逆矩阵
+$$
+{\bf{R}}^{-1}_i(\phi)={\bf{R}}_i(-\phi)={\bf{R}}^{T}_i(\phi)
+$$
+其他一些有趣的性质包括：
+$$
+\begin{aligned}
+{\bf{R}}_i(0) & = {\bf{I}} \\
+{\bf{R}}_i(\phi_1){\bf{R}}_i(\phi_2) & = {\bf{R}}_i(\phi_1 + \phi_2) \\
+{\bf{R}}_i(\phi_1){\bf{R}}_i(\phi_2) & = {\bf{R}}_i(\phi_2){\bf{R}}_i(\phi_1)
+\end{aligned}
+$$
+### 绕任意轴的旋转
+绕任意轴的旋转看起来会比较复杂，但是仔细分析一下其实并不困难。推导过程主要分两步，
+
+1. 求旋转前后两个向量的关系；
+2. 将这个关系转换为矩阵；
+
+假设我们需要将向量${\bf{v}}$绕着轴${\bf{a}}$旋转角度$\theta$，如下图所示。
+
+![Rotate arbitrary axis](./images/Rotate_arbitrary_axis.png)
+
+令${\bf{v}}_c$表示${\bf{v}}$在轴${\bf{a}}$上的投影，即：
+$$
+{\bf{v}}_c = {\bf{a}}||{\bf{v}}||\cos\alpha={\bf{a}}({\bf{v}}\cdot{\bf{a}})
+$$
+并且令：
+$$
+{\bf{v}}_1={\bf{v}}-{\bf{v}}_c \\ 
+{\bf{v}}_2={\bf{v}}_1\times{\bf{a}}
+$$
+则根据${\bf{v}}_1$与${\bf{v}}_1'$、${\bf{v}}_2$与${\bf{v}}_2'$的关系，可以求得：
+$$
+{\bf{v}}'={\bf{v}}_c+{\bf{v}}_1\cos\theta+{\bf{v}}_2\sin\theta
+$$
+这样就得到了${\bf{v}}'$与${\bf{v}}$的关系。
+接下来，
+
+```C++
+Matrix4x4 Rotate(Float theta, const Vector3f &axis) {
+    Vector3f a = Normalize(axis);
+    Float sinTheta = std::sin(Radians(theta));
+    Float cosTheta = std::cos(Radians(theta));
+    Matrix4x4 m;
+    // Compute rotation of first basis vector
+    m.m[0][0] = a.x * a.x + (1 - a.x * a.x) * cosTheta;
+    m.m[0][1] = a.x * a.y * (1 - cosTheta) - a.z * sinTheta;
+    m.m[0][2] = a.x * a.z * (1 - cosTheta) + a.y * sinTheta;
+    m.m[0][3] = 0;
+
+    // Compute rotations of second and third basis vectors
+    m.m[1][0] = a.x * a.y * (1 - cosTheta) + a.z * sinTheta;
+    m.m[1][1] = a.y * a.y + (1 - a.y * a.y) * cosTheta;
+    m.m[1][2] = a.y * a.z * (1 - cosTheta) - a.x * sinTheta;
+    m.m[1][3] = 0;
+
+    m.m[2][0] = a.x * a.z * (1 - cosTheta) - a.y * sinTheta;
+    m.m[2][1] = a.y * a.z * (1 - cosTheta) + a.x * sinTheta;
+    m.m[2][2] = a.z * a.z + (1 - a.z * a.z) * cosTheta;
+    m.m[2][3] = 0;
+    return m;
+}
+```
+
 ### 欧拉角与旋转变换
 
 # 四元数法
