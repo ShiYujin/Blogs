@@ -293,12 +293,32 @@ float GeometrySmithSchlickGGX(float NdotV, float NdotL, float r) {
     return ggx1 * ggx2;
 }
 ```
+这里面还有一个细节，那就是迪士尼后来提出了对粗糙粗`roughness`做一个remapping，使得它更接近于真实：
+$$
+\alpha' = (\frac{roughness + 1}{2})^2 \\
+$$
+其他的部分不变。这样shader实现为：
+```
+float GeometrySmithSchlickGGX(float NdotV, float NdotL, float roughness) {
+    float r = (roughness + 1.0) * 0.5; // remapping roughness
+    r = r * r
+    float ggx2 = GeometrySchlickGGX(NdotV, r);
+    float ggx1 = GeometrySchlickGGX(NdotL, r);
+    return ggx1 * ggx2;
+}
+```
+注意，此时`GeometrySmithSchlickGGX`的输入参数不是`r`，而改为了`roughness`。
 ### 优化
 考虑到几乎所有$G$都带有$({\bf{n}}\cdot{\bf{v}})({\bf{n}}\cdot{\bf{l}})$项，可以跟$f_r({\bf{l}},{\bf{v}})$的分母约分，因此在实现时，可以考虑定义
 $$
 G'=\frac{G}{({\bf{n}}\cdot{\bf{v}})({\bf{n}}\cdot{\bf{l}})}
 $$
 节省一部分计算。
+
+这样做不只是出于性能的考虑，也是出于精度的考虑。如果${\bf{n}}\cdot{\bf{v}}$和${\bf{n}}\cdot{\bf{l}}$的乘积接近于0，那么specular项的分母会非常小，严重影响其精度，极端的情况下会在过渡区域产生一道割裂的分界线。下图展示了$({\bf{n}}\cdot{\bf{v}})*({\bf{n}}\cdot{\bf{l}})*10$（左）、未优化时（中）、优化后（右）的效果，可以看出左侧两张图的分界线非常吻合。优化后则没有颜色割裂的问题。
+
+![Geometry-bugs](./images/Geometry-bugs.png)
+
 ## 菲涅尔项 F
 菲涅尔项描述的是物体表面的反射、折射现象。一般我们会采用常量$F_0$来计算菲涅尔项$F({\bf{v}},{\bf{h}},F_0)$。
 
@@ -403,6 +423,8 @@ float FresnelCookTorrance(float VdotH, float F0) {
 下图列出了菲涅尔项取$F_{Schlick}$时，几种不同的$D$和$G$的效果。
 
 ![specular BRDF](./images/specularBRDF.jpg)
+
+注：该图生成时未考虑对几何分布项的优化问题，优化后的颜色过度应该会更加平滑。
 
 可以看出，$D_{GGX}$的过渡性更好，阴影更平滑，$D_{Blinn}$和$D_{Beckmann}$几乎没有差别。
 # Diffuse BRDF
