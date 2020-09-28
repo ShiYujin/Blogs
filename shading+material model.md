@@ -1,6 +1,39 @@
-# 材质和着色模型调研
+# Shading Model
+着色模型（shading model）描述的是材质表面对光线的作用，它的输入是光线、入射角、反射角、材质的属性（例如粗糙度、金属度等），输出是材质的颜色。前面提到的BRDF模型就是shading model的一种，但是BRDF模型过于简单，很多复杂的物理现象无法描述。本文将接着BRDF继续介绍一些更复杂的shading model，以及UE4和Disney的实现。
+## 理论
+主要介绍对各向异性、次表面、清漆和布料几种物理现象的shading model。
+### Anisotropy
 
-## Shading model
+### Subsurface
+
+公式：
+
+$$
+\begin{aligned}
+f_{ss}({\bf{l}},{\bf{v}}) & = \frac{1.25}{\pi}(F_{Subsurface}(\frac{1}{{\bf{n}}\cdot{\bf{l}}+{\bf{n}}\cdot{\bf{v}}}-0.5)+0.5) \\
+F_{Subsurface} & = F_{Schlick}({\bf{n}},{\bf{l}},1,f_{90})F_{Schlick}({\bf{n}},{\bf{v}},1,f_{90})\\
+F_{Schlick}({\bf{n}},{\bf{l}},f_0,f_{90}) & = f_0+(f_{90}-f_0)(1-({\bf{n}}\cdot{\bf{l}}))^5 \\
+f_{90} & = roughness\cdot({\bf{n}}\cdot{\bf{h}})^2
+\end{aligned}
+$$
+
+### Clear Coat
+
+### Cloth
+公式
+
+$$
+\begin{aligned}
+G_{Cloth} & =\frac{1}{4*({\bf{n}}\cdot{\bf{v}}+{\bf{n}}\cdot{\bf{l}}-({\bf{n}}\cdot{\bf{v}})({\bf{n}}\cdot{\bf{l}}))} \\
+D_{Charlie} & = \frac{(2+\frac{1}{\alpha})\sin^{\frac{1}{\alpha}}\theta}{2\pi}\\
+D_{Ashikhmin} & = \frac{1}{\pi(1+4\alpha^2)}\left(1+4\frac{\exp\left(\frac{-\cot^2\theta}{\alpha^2}\right)}{\sin^4\theta}\right) \\
+D_{AshikhminApprox} & = \frac{1}{\pi(1+4\alpha^2)}\left(1+\frac{4\alpha^4}{(\cos^2\theta+\alpha^2\sin^2\theta)^2}\right) 
+\end{aligned}
+$$
+
+其中，$\theta$是${\bf{n}}$和${\bf{h}}$的夹角；
+
+## 实现
 着色模型（Shading model）指的是材质如何对入射光线做出反应，可以理解为从入射光线到出射光线的映射函数。前面介绍的[BRDF理论](https://blog.csdn.net/u010281174/article/details/107583637)也是shading model的一部分。除了BRDF，还有BSDF、BTDF模型，统称为BxDF。BxDF的公式的选取决定了shading model的效果。这一节我们将讨论主流的渲染引擎、方法都采用了哪些shading model，以及他们的具体实现是什么。
 
 ### UE4
