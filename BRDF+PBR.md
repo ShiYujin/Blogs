@@ -147,45 +147,55 @@ $$
 
 到这一步，可以看出，只要确定了法向分布函数$D$，就可以求出遮挡函数$G_1$。
 
-到现在为止，我们推导出了$G_1({\bf{v}},{\bf{m}})$的公式，它表示的是从出射光线方向看，微表面的遮挡情况。但是在BRDF中，除了出射光线方向会遮挡，入射光线方向也会被遮挡。两者的遮挡都会影响出射光线。这个描述存在两个方向遮挡的函数为$G_2({\bf{l}},{\bf{v}},{\bf{m}})$，最简单的$G_2$，也是最常用的一种smith形式，就是：
+到现在为止，我们推导出了$G_1({\bf{v}},{\bf{m}})$的公式，它表示的是从出射光线方向看，微表面的遮挡情况。但是在BRDF中，除了出射光线方向会遮挡，入射光线方向也会被遮挡。两者的遮挡都会影响出射光线。这个描述存在两个方向遮挡的函数为$G_2({\bf{l}},{\bf{v}},{\bf{m}})$，关于怎么用$G_1$构造$G_2$，有比较多的方法。
+
+##### Separable G
+最简单的$G_2$，也是最常用的一种smith形式，就是：
 
 $$
-G_2({\bf{l}},{\bf{v}},{\bf{m}}) \approx G_1({\bf{l}},{\bf{m}}) \cdot G_1({\bf{v}},{\bf{m}})
+\begin{aligned}
+G_2({\bf{l}},{\bf{v}},{\bf{m}}) & = G_1({\bf{l}},{\bf{m}}) \cdot G_1({\bf{v}},{\bf{m}})\\
+& = \frac{\chi^+({\bf{l}},{\bf{m}})}{1+\Lambda({\bf{l}})}\cdot\frac{\chi^+({\bf{v}},{\bf{m}})}{1+\Lambda({\bf{v}})}
+\end{aligned}
 $$
 
-这个公式被称为高度不相关的（uncorrelated）$G$，因为它确定的遮挡概率只跟微表面的法向有关，而忽略了微表面的高度遮挡。它的误差存在于高度遮挡频繁的情况：
+这个公式被称为分离的（separable）$G$，因为它确定的遮挡概率只跟微表面的法向有关，而忽略了微表面的高度遮挡。它的误差存在于高度遮挡频繁的情况：
 
 1. 粗糙的表面；
 2. 入射角和出射角接近于$90\degree$，即掠射角的情况。
 
-另外可以考虑这样一种特殊情况，当光线入射角度等于出射角度的时候，也就是视角和光源来源一样的时候，理论上$G_2({\bf{l}},{\bf{v}},{\bf{m}})$应该等于$G_1({\bf{v}},{\bf{m}})$，因为入射光线和出射光线的遮挡是一样的。但是在上式的情况下，$G_2=G_1^2$，这就不对了。
+另外可以考虑这样一种特殊情况，当光线入射角度等于出射角度的时候，也就是视角和光源来源一样的时候，理论上$G_2({\bf{l}},{\bf{v}},{\bf{m}})$应该等于$G_1({\bf{v}},{\bf{m}})$，因为入射光线和出射光线的遮挡是一样的。但是在上式的情况下，$G_2=G_1^2$，这就不对了。准确的说，这个形式给出的阴影比实际要强。
 
 尽管不够准确，但是smith形式的$G_2$已经足够模拟真实情况，因此应用非常广泛。
 
-一种更普遍的形式是：
-
-$$
-G_2({\bf{l}},{\bf{v}},{\bf{m}}) = \lambda(\phi)G_1({\bf{l}},{\bf{m}}) \cdot G_1({\bf{v}},{\bf{m}})+(1-\lambda(\phi))\min{(G_1({\bf{l}},{\bf{m}}), G_1({\bf{v}},{\bf{m}}))}
-$$
-
-其中的$\phi$表示${\bf{l}}$和${\bf{v}}$在垂直于${\bf{n}}$的平面上的夹角（可以理解为球坐标系下$\theta$的差值）。$\lambda(\phi)$的取值决定了$G_2$的形态。这里不再继续展开介绍，因为用不到。
-
-什么样的$G_2$才是高度相关的（height-correlated）呢？我们可以利用$\Lambda({\bf{v}})$形式来描述：
+##### Height-correlated G
+第二种形式，被称为高度相关的（height-correlated）$G$，
 
 $$
 G_2({\bf{l}},{\bf{v}},{\bf{m}})=\frac{\chi^+({\bf{l}},{\bf{m}})\chi^+({\bf{v}},{\bf{m}})}{1+\Lambda({\bf{l}})+\Lambda({\bf{v}})}
 $$
 
-对比高度不相关的形式：
+这个形式的$G$对于入射光线和出射光线差别较大的情况下，更准确，但是当入射光线和出射光线非常接近的时候，同样有着比实际更强的阴影。具体的推导过程可以参考[16]。
+
+##### Direction-correlated G
+第三种形式，是为了解决入射光线和出射光线非常接近时的误差。考虑一种极端的情况，当入射光线和出射光线平行的时候，阴影其实是消失了的。这个现象被称为hotspot effect（热点现象？）。方向相关的（direction-correlated）$G$就是基于这个洞察提出的：
 
 $$
-\begin{aligned}
-G_2({\bf{l}},{\bf{v}},{\bf{m}}) & =G_1({\bf{l}},{\bf{m}}) \cdot G_1({\bf{v}},{\bf{m}})\\
-& =\frac{\chi^+({\bf{l}},{\bf{m}})\chi^+({\bf{v}},{\bf{m}})}{1+\Lambda({\bf{l}})+\Lambda({\bf{v}})+\Lambda({\bf{l}})\Lambda({\bf{v}})}
-\end{aligned}
+G_2({\bf{l}},{\bf{v}},{\bf{m}}) = \lambda(\phi)G_1({\bf{l}},{\bf{m}}) \cdot G_1({\bf{v}},{\bf{m}})+(1-\lambda(\phi))\min{(G_1({\bf{l}},{\bf{m}}), G_1({\bf{v}},{\bf{m}}))}
 $$
 
-再回到微表面理论。
+其中的$\phi$表示${\bf{l}}$和${\bf{v}}$在垂直于${\bf{n}}$的平面上的夹角（可以理解为球坐标系下$\phi$坐标的差值）。$\lambda(\phi)$的取值决定了$G_2$的形态，当入射角和出射角非常接近的时候，$\lambda(\phi)=0$，此时$G_2$退化到$G_1$的形态。
+
+##### Height-direction-correlated G
+第四种形式，高度方向均相关的$G$，
+
+$$
+G_2({\bf{l}},{\bf{v}},{\bf{m}})=\frac{\chi^+({\bf{l}},{\bf{m}})\chi^+({\bf{v}},{\bf{m}})}{1+\max(\Lambda({\bf{l}}),\Lambda({\bf{v}}))+\lambda({\bf{l}},{\bf{v}})\min(\Lambda({\bf{l}}),\Lambda({\bf{v}}))}
+$$
+
+这个形式是前面两种形式的混合，它既能在入射角和出射角接近的时候退化到$G_1$的形态，也能在入射角和出射角分开的时候逐渐变为高度相关的$G$。唯一需要确定的是$\lambda({\bf{l}},{\bf{v}})$的形式，对此不同的paper有着不同的提议，在此不再展开。
+
+重新回到微表面理论。
 
 至此，基于微表面理论的BRDF函数表示为：
 
@@ -466,11 +476,29 @@ $$
 他们之间的区别就是$G_1$的选取不同。
 
 ##### Beckmann
-最初Smith公式的提出，就是为了Beckmann[3]方法。它的$G_1$为
+Beckmann的$G$是跟$D$一起提出的，前面介绍过$G$是可以从$D$推导出来的，因此Beckmann的$\Lambda$为：
 
 $$
-c = \frac{{\bf{n}}\cdot{\bf{v}}}{\alpha\sqrt{1-({\bf{n}}\cdot{\bf{v}})^2}} \\
-G_{Beckmann}({\bf{v}}) = 
+\begin{aligned}
+c & = \frac{{\bf{n}}\cdot{\bf{v}}}{\alpha\sqrt{1-({\bf{n}}\cdot{\bf{v}})^2}} \\
+\Lambda({\bf{v}}) & = \frac{\text{erf}(c)-1}{2}+\frac{1}{2c\sqrt{\pi}}\exp(-c^2)
+\end{aligned}
+$$
+
+但是由于有$\text{erf}$函数的存在，计算起来过于复杂，因此通常用如下的近似形式：
+
+$$
+\Lambda({\bf{v}}) \approx
+\begin{cases}
+\frac{1-1.259x+0.396c^2}{3.535c+2.181c^2},  & \text{if }c<1.6 \\
+0, & \text{if }c\geq1.6
+\end{cases}
+$$
+
+因此，Beckmann的$G_1$为
+
+$$
+G_{Beckmann}({\bf{v}}) \approx 
 \begin{cases}
 \frac{3.535c+2.181c^2}{1+2.276c+2.577c^2},  & \text{if }c<1.6 \\
 1, & \text{if }c\geq1.6
@@ -496,11 +524,23 @@ float GeometrySmithBeckmann(float NdotV, float NdotL, float r) {
 ```
 
 ##### GGX
-GGX[3]的$G_1$定义为
+GGX[3]跟Beckmann类似，都是从法向分布函数推导出来的：
+
+$$
+\begin{aligned}
+c & = \frac{{\bf{n}}\cdot{\bf{v}}}{\alpha\sqrt{1-({\bf{n}}\cdot{\bf{v}})^2}} \\
+\Lambda({\bf{v}}) & = \frac{-1+\sqrt{1+\frac{1}{c^2}}}{2}
+\end{aligned}
+$$
+
+对应的$G_1$定义为
+
 $$
 G_{GGX}({\bf{v}}) = \frac{2({\bf{n}}\cdot{\bf{v}})}{({\bf{n}}\cdot{\bf{v}})+\sqrt{\alpha^2+(1-\alpha^2)({\bf{n}}\cdot{\bf{v}})^2}}
 $$
+
 shader实现：
+
 ```C++
 float GeometryGGX(float NdotV, float r) {
     float r2 = r * r;
@@ -512,38 +552,50 @@ float GeometrySmithGGX(float NdotV, float NdotL, float r) {
     return ggx1 * ggx2;
 }
 ```
+
 ##### GGX Joint
-GGX Joint的$G_1$定义为：
+前面提到的GGX用的是$G_2=G_1*G_1$的separable G，如果用height-correlated G，那么$G_2$变为：
+
 $$
-G_{GGXJoint}({\bf{v}}) = \frac{\sqrt2({\bf{n}}\cdot{\bf{v}})}{({\bf{n}}\cdot{\bf{l}})\cdot\sqrt{\alpha^2+(1-\alpha^2)({\bf{n}}\cdot{\bf{v}})^2}}
+\begin{aligned}
+G_{2-GGXJoint}({\bf{l}},{\bf{v}},{\bf{m}}) & =\frac{1}{1+\Lambda({\bf{l}})+\Lambda({\bf{v}})}\\
+& =\frac{2({\bf{n}}\cdot{\bf{v}})({\bf{n}}\cdot{\bf{l}})}{({\bf{n}}\cdot{\bf{l}})\cdot\sqrt{\alpha^2+(1-\alpha^2)({\bf{n}}\cdot{\bf{v}})^2} + ({\bf{n}}\cdot{\bf{v}})\cdot\sqrt{\alpha^2+(1-\alpha^2)({\bf{n}}\cdot{\bf{l}})^2}}
+\end{aligned}
 $$
+
 shader实现：
+
 ```C++
-float GeometryGGXJoint(float NdotV, float NdotL, float r) {
-    float r2 = r * r;
-    return (NdotV) / (NdotL * sqrt(r2 + (1 - r2) * NdotV * NdotV));
-}
 float GeometrySmithGGXJoint(float NdotV, float NdotL, float r) {
-    float ggx2 = GeometryGGX(NdotV, NdotL, r);
-    float ggx1 = GeometryGGX(NdotL, NdotV, r);
-    return 2 * ggx1 * ggx2;
+    float r2 = r * r;
+    float Vis_SmithV = NdotL * sqrt(NdotV * (NdotV - NdotV * r2) + r2);
+	float Vis_SmithL = NdotV * sqrt(NdotL * (NdotL - NdotL * r2) + r2);
+	return 2 * NdotV * NdotL / (Vis_SmithV + Vis_SmithL);
 }
 ```
+
 为了提高计算效率，UE4对GGX Joint方法做了一个近似，公式为：
+
 $$
-G_{GGXJoint}({\bf{v}}) = \frac{\sqrt2({\bf{n}}\cdot{\bf{v}})}{({\bf{n}}\cdot{\bf{l}})\cdot({\bf{n}}\cdot{\bf{v}}(1-\alpha)+\alpha)}
+\begin{aligned}
+G_{2-GGXJoint}({\bf{l}},{\bf{v}},{\bf{m}}) & =\frac{1}{1+\Lambda({\bf{l}})+\Lambda({\bf{v}})}\\
+& \approx\frac{2({\bf{n}}\cdot{\bf{v}})({\bf{n}}\cdot{\bf{l}})}{({\bf{n}}\cdot{\bf{l}})\cdot(\alpha+(1-\alpha)({\bf{n}}\cdot{\bf{v}})) + ({\bf{n}}\cdot{\bf{v}})\cdot(\alpha+(1-\alpha)({\bf{n}}\cdot{\bf{l}}))}
+\end{aligned}
 $$
+
 shader实现：
+
 ```C++
 float GeometryGGXJointApprox(float NdotV, float NdotL, float r) {
     return (NdotV) / (NdotL * (r + (1 - r) * NdotV));
 }
 float GeometrySmithGGXJointApprox(float NdotV, float NdotL, float r) {
-    float ggx2 = GeometryGGX(NdotV, NdotL, r);
-    float ggx1 = GeometryGGX(NdotL, NdotV, r);
-    return 2 * ggx1 * ggx2;
+	float Vis_SmithV = NdotL * ( NdotV * ( 1 - r ) + r );
+	float Vis_SmithL = NdotV * ( NdotL * ( 1 - r ) + r );
+	return 2 * NdotV * NdotL / ( Vis_SmithV + Vis_SmithL );
 }
 ```
+
 ##### Schlick-Beckmann
 Schlick[11]的$G_1$定义为
 $$

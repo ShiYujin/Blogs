@@ -3,7 +3,124 @@
 ## 理论
 主要介绍对各向异性、次表面、清漆和布料几种物理现象的shading model。
 ### Anisotropy
+![material_anisotropic.png](images/material_anisotropic.png)
+左：各向同性金属球；右：各向异性金属球。图片来源：Filament文档。
 
+将各向同性的shading model拓展到各向异性，需要解决两个问题，
+
+1. 需要引入哪些新的参数来描述各向异性？
+2. 需要在原有BRDF模型的基础上修改公式的哪些部分来描述各向异性？
+
+对于第一个问题，既然是“各向”异性，必然要分别定义各个方向上的差异的属性，这里的属性一般是粗糙度。方向一般在切平面上选取两个轴，即tangent方向和bitagent方向，他们与normal方向共通构成一组正交基底（TBN坐标系）。对于需要精细控制切平面方向的模型，比如头发，会单独提供切向贴图，指明切向方向，类似于法向贴图。其他情况一般由系统（shader）确定切向方向。所以总结下来，需要额外增加一个参数，将原有的粗糙度替换为tangent和bitangent方向的粗糙度（记为$\alpha_t,\alpha_b$或$\alpha_x,\alpha_y$）。
+
+实际操作中，一般是增加一个`anisotropy`各向异性参数，然后用粗糙度$\alpha$（$\alpha = roughness * roughness$）和`anisotropy`计算tangent/bitangent两个方向上的粗糙度，具体的映射方法有很多。
+
+- Neubelt and Pettine
+
+$$
+\begin{aligned}
+\alpha_x & = \alpha \\
+\alpha_y & = lerp(0, \alpha, 1-anisotropy)
+\end{aligned}
+$$
+
+- Burley
+
+$$
+\begin{aligned}
+\alpha_x & = \frac{\alpha}{\sqrt{1-0.9\times anisotropy}} \\
+\alpha_y & = \alpha\sqrt{1-0.9\times anisotropy}
+\end{aligned}
+$$
+
+- Kulla
+
+$$
+\begin{aligned}
+\alpha_x & = \alpha \times (1+anisotropy) \\
+\alpha_y & = \alpha \times (1-anisotropy)
+\end{aligned}
+$$
+
+对于第二个问题，BRDF公式取决于三个部分，法向分布函数$D$，遮挡项$G$，和表示微观BRDF的菲涅尔项$F$。其中$F$肯定是不会变的，因为各向异性是宏观的现象，不会影响微观表面的性质。至于$D$和$G$，由于$G$都是从$D$推导出来的，因此我们先看一下$D$需要作出怎样的修改。
+
+#### 形状不变性
+法向分布函数$D$的形状不变性指的是这样一种特性，改变$D$的粗糙度系数相当于对微表面进行拉伸，而不改变微表面的形状。
+
+要说明白形状不变性，我们引入一个新的函数$P^{22}(x_{\tilde{m}},y_{\tilde{m}})$，描述微表面的法向量${\bf{m}}$的2D斜率分布。其中，${\bf{m}}=(x_m,y_m,z_m)$并且
+
+$$
+\begin{aligned}
+(x_{\tilde{m}},y_{\tilde{m}}) & =(-\frac{x_m}{z_m},-\frac{y_m}{z_m}) = -\tan\theta_m(\cos\phi_m, \sin\phi_m)\\
+{\bf{m}} & =\frac{(-x_{\tilde{m}},-y_{\tilde{m}},1)}{\sqrt{x_{\tilde{m}}^2+y_{\tilde{m}}^2+1}}
+\end{aligned}
+$$
+
+${\bf{m}}$的球坐标系坐标为$(1,\theta,\phi)$，如下图所示。
+
+![3D_Spherical.png](images/3D_Spherical.png)
+
+既然是分布函数，$P^{22}(x_{\tilde{m}},y_{\tilde{m}})$满足：
+
+$$
+\int^\infty_{-\infty}\int^\infty_{-\infty}P^{22}(x_{\tilde{m}},y_{\tilde{m}})dx_{\tilde{m}}dy_{\tilde{m}}=1
+$$
+
+并且$P^{22}(x_{\tilde{m}},y_{\tilde{m}})$与$D$的关系为：
+
+$$
+D({\bf{m}})=\frac{\chi^+({\bf{n}},{\bf{m}})}{\cos^4\theta_m}P^{22}(x_{\tilde{m}},y_{\tilde{m}})=\frac{\chi^+({\bf{n}},{\bf{m}})}{({\bf{n}}\cdot{\bf{m}})^4}P^{22}(x_{\tilde{m}},y_{\tilde{m}})
+$$
+
+考虑到$P^{22}(x_{\tilde{m}},y_{\tilde{m}})$同时也是粗糙度$\alpha$的函数，因此可以写为$P^{22}(x_{\tilde{m}},y_{\tilde{m}},\alpha)$。
+
+满足形状不变性的法向分布函数，它的$P^{22}(x_{\tilde{m}},y_{\tilde{m}},\alpha)$符合这种形式：
+
+$$
+\begin{aligned}
+P^{22}(x_{\tilde{m}},y_{\tilde{m}},\alpha) & =\frac{1}{\alpha^2}f\left(\frac{\sqrt{x_{\tilde{m}}^2+y_{\tilde{m}}^2}}{\alpha}\right)=\frac{1}{\alpha^2}f\left(\frac{\tan\theta_m}{\alpha}\right) \\
+& = \frac{1}{\alpha^2}f\left(\frac{\sqrt{1-({\bf{n}}\cdot{\bf{m}})^2}}{\alpha({\bf{n}}\cdot{\bf{m}})}\right) \\
+D({\bf{m}}) & =\frac{\chi^+({\bf{n}},{\bf{m}})}{({\bf{n}}\cdot{\bf{m}})^4}P^{22}(x_{\tilde{m}},y_{\tilde{m}})=\frac{\chi^+({\bf{n}},{\bf{m}})}{\alpha^2({\bf{n}}\cdot{\bf{m}})^4}f\left(\frac{\tan\theta_m}{\alpha}\right) \\
+& = \frac{\chi^+({\bf{n}},{\bf{m}})}{\alpha^2({\bf{n}}\cdot{\bf{m}})^4}f\left(\frac{\sqrt{1-({\bf{n}}\cdot{\bf{m}})^2}}{\alpha({\bf{n}}\cdot{\bf{m}})}\right)
+\end{aligned}
+$$
+
+对于任意大于零的实数$\lambda$，有：
+
+$$
+P^{22}(x_{\tilde{m}},y_{\tilde{m}},\alpha)=\frac{1}{\lambda^2}P^{22}(\frac{x_{\tilde{m}}}{\lambda},\frac{y_{\tilde{m}}}{\lambda},\frac{\alpha}{\lambda})
+$$
+
+也就是说，改变粗糙度仅相当于对$P^{22}(x_{\tilde{m}},y_{\tilde{m}},\alpha)$进行拉伸。
+
+前面提到的三种法向分布函数：Beckmann、BlinnPhong和GGX，只有BlinnPhong不满足形状不变性。推广的GTR公式也同样不满足形状不变性。
+
+#### 各向异性D和G
+对于具有形状不变性性质的法向分布函数$D$，它的形式变为：
+
+$$
+D({\bf{m}}) =\frac{\chi^+({\bf{n}},{\bf{m}})}{\alpha_x\alpha_y({\bf{n}}\cdot{\bf{m}})^4}f\left(\frac{\sqrt{\frac{({\bf{t}}\cdot{\bf{m}})^2}{\alpha_x^2}+\frac{({\bf{b}}\cdot{\bf{m}})^2}{\alpha_y^2}}}{({\bf{n}}\cdot{\bf{m}})}\right)
+$$
+
+相应的遮挡项$G$，只需要改变$\Lambda({\bf{s}})$中的变量$c$：
+
+$$
+c = \frac{{\bf{n}}\cdot{\bf{s}}}{\sqrt{\alpha_x^2({\bf{t}}\cdot{\bf{s}})^2+\alpha_y^2({\bf{b}}\cdot{\bf{s}})^2}}
+$$
+
+这里的${\bf{s}}$可以是入射光线${\bf{l}}$，也可以是出射光线${\bf{v}}$。
+
+有了一般的推广形式，我们将其应用到具有形状不变性的Beckmann和GGX模型上，有：
+
+$$
+\begin{aligned}
+D_{Beckmann}({\bf{h}}, \alpha_x, \alpha_y) & = \frac{\chi^+({\bf{n}},{\bf{h}})}{\pi\alpha_x\alpha_y({\bf{n}}\cdot{\bf{h}})^4}\exp\left(-{\frac{\frac{({\bf{t}}\cdot{\bf{h}})^2}{\alpha_x^2}+\frac{({\bf{b}}\cdot{\bf{h}})^2}{\alpha_y^2}}{({\bf{n}}\cdot{\bf{h}})^2}}\right) \\
+D_{GGX}({\bf{h}}, \alpha_x, \alpha_y) & = \frac{\chi^+({\bf{n}},{\bf{h}})}{\pi\alpha_x\alpha_y\left(\frac{({\bf{t}}\cdot{\bf{h}})^2}{\alpha_x^2}+\frac{({\bf{b}}\cdot{\bf{h}})^2}{\alpha_y^2}+({\bf{n}}\cdot{\bf{h}})^2\right)^2}
+\end{aligned}
+$$
+
+### Clear Coat
+Clear Coat模型是多层材质的一种最简单的形式。
 ### Subsurface
 
 公式：
@@ -16,8 +133,6 @@ F_{Schlick}({\bf{n}},{\bf{l}},f_0,f_{90}) & = f_0+(f_{90}-f_0)(1-({\bf{n}}\cdot{
 f_{90} & = roughness\cdot({\bf{n}}\cdot{\bf{h}})^2
 \end{aligned}
 $$
-
-### Clear Coat
 
 ### Cloth
 公式
