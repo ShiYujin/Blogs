@@ -1023,4 +1023,6 @@ vec3 BRDF( vec3 L, vec3 V, vec3 N, vec3 X, vec3 Y )
 2. [Separable Subsurface Scattering](https://zaguan.unizar.es/record/56154/files/texto_completo.pdf)
 3. [A Microfacet-Based BRDF Generator](https://dl.acm.org/doi/pdf/10.1145/344779.344814)
 4. [Production Friendly Microfacet Sheen BRDF](http://www.aconty.com/pdf/s2017_pbs_imageworks_sheen.pdf)
+5. [Filament文档](https://google.github.io/filament/Filament.html)
+6. [Real-time Rendering, 4th edition](http://dl.booktolearn.com/ebooks2/computer/graphics/9781138627000_Real_Time_Rendering_4th_Edition_5726.pdf)
 
