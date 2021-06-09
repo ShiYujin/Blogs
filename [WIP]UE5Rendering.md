@@ -61,8 +61,9 @@ ENGINE_API IRendererModule& GetRendererModule()
 ```
 
 Q:`Name`是什么东西？
+A:
 
-它的作用是调用一个名为`EnqueueUniqueRenderCommand`的函数，这个函数定义在`Engine\Source\Runtime\RenderCore\Public\RenderingThread.h`:L233
+`ENQUEUE_RENDER_COMMAND`的作用是调用一个名为`EnqueueUniqueRenderCommand`的函数，这个函数定义在`Engine\Source\Runtime\RenderCore\Public\RenderingThread.h`:L233
 
 ```C++
 template<typename TSTR, typename LAMBDA>
@@ -115,6 +116,53 @@ FORCEINLINE_DEBUGGABLE void EnqueueUniqueRenderCommand(LAMBDA&& Lambda)
         ...
     }
 ```
+
+这里面，我们关注的是函数`RenderViewFamily_RenderThread`调用。
+
+`RenderViewFamily_RenderThread`函数定义在`Engine\Source\Runtime\Renderer\Private\SceneRendering.cpp`:L3493，它的作用主要是调用`SceneRenderer`的`SceneRenderer->Render(GraphBuilder);`函数。
+
+第一个参数，`FRHICommandListImmediate RHICmdList`，它是一个命令列表，用于执行渲染命令。
+
+第二个参数，`FSceneRenderer* SceneRenderer`，类`FSceneRenderer`定义在`Engine\Source\Runtime\Renderer\Private\SceneRendering.h`:L1722，s是一个渲染的基类，唯一的作用就是渲染场景。它由`FSceneViewFamily::BeginRender`初始化，并传递给渲染进程，通过调用`Render()`函数执行渲染操作，最后在渲染结束时被删除掉。
+
+`FSceneRenderer* SceneRenderer`创建在：`Engine\Source\Runtime\Renderer\Private\SceneRendering.cpp`:L3783:
+
+```C++
+FSceneRenderer* SceneRenderer = FSceneRenderer::CreateSceneRenderer(ViewFamily, Canvas->GetHitProxyConsumer());
+```
+
+`CreateSceneRenderer`函数在：`Engine\Source\Runtime\Renderer\Private\SceneRendering.cpp`:L3260:
+
+```C++
+FSceneRenderer* FSceneRenderer::CreateSceneRenderer(const FSceneViewFamily* InViewFamily, FHitProxyConsumer* HitProxyConsumer)
+{
+	EShadingPath ShadingPath = InViewFamily->Scene->GetShadingPath();
+	FSceneRenderer* SceneRenderer = nullptr;
+
+	if (ShadingPath == EShadingPath::Deferred)
+	{
+		SceneRenderer = new FDeferredShadingSceneRenderer(InViewFamily, HitProxyConsumer);
+	}
+	else 
+	{
+		check(ShadingPath == EShadingPath::Mobile);
+		SceneRenderer = new FMobileSceneRenderer(InViewFamily, HitProxyConsumer);
+	}
+
+	return SceneRenderer;
+}
+```
+
+到这里，终于有图形学相关的名词出现了，根据`ShadingPath`的不同定义，`CreateSceneRenderer`会返回延迟渲染管线渲染器`FDeferredShadingSceneRenderer`或者用于移动设备的前向渲染管线渲染器`FMobileSceneRenderer`。
+
+我们比较关心的是延迟管线，它定义在`Engine\Source\Runtime\Renderer\Private\DeferredShadingRenderer.h`:L163，继承自`FSceneRenderer`:
+
+```C++
+class FDeferredShadingSceneRenderer : public FSceneRenderer{
+	...
+}
+```
+
 
 
 
