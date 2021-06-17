@@ -73,9 +73,93 @@ SGGX模型用一个3x3的矩阵来描述椭球的形状，但是这个3x3的矩�
 
 ![SMatrix](./images/SIGCourse2020/SMatrix.png)
 
-三个特征向量对应椭球的三个轴，三个特征值对应沿着相应轴的投影面积的平方。这样描述还有一个好处，GGX可以看做是三个特征向量分别为$\vec{h}$、$\vec{b}$、$\vec{n}$的特殊情况，此时对应的特征值分别为$\alpha_x^2$、$\alpha_y^2$、$1$，前两个分别为粗糙度在tangent方向、bitangent方向的分量的平方。
+方便起见，我们把这个矩阵称为${\bf{S}}_{eigen}$形式。三个特征向量对应椭球的三个轴，三个特征值对应沿着相应轴的投影面积的平方。这样描述还有一个好处，GGX可以看做是三个特征向量分别为$\vec{t}$、$\vec{b}$、$\vec{n}$的特殊情况，此时对应的特征值分别为$\alpha_x^2$、$\alpha_y^2$、$1$，前两个分别为粗糙度在tangent方向、bitangent方向的分量的平方。
 
-但是凭空出现的这三个椭球的轴太诡异了，还不是我们需要的物理量。因此我们想把它搞成我们熟悉的轴，比如法向。
+![GGXcase](./images/SIGCourse2020/GGXcase.png)
+
+但是凭空出现的这三个椭球的轴太诡异了，还不是我们需要的物理量。因此我们想把它搞成我们熟悉的轴，比如像GGX那样其中一个轴是法向。我们将SGGX的三个轴$\hat\omega_i$稍作旋转，写成这个形式：
+
+![SMatrixNormal](./images/SIGCourse2020/SMatrixNormal.png)
+
+我们把这个矩阵称为${\bf{S}}_{norm}$形式。注意，这里的$\vec{t}$、$\vec{b}$、$\vec{n}$向量并不是GGX里面用到的mesh的tangent空间，而是各向异性的tangent空间旋转对齐到normal后的tangent空间。各向异性的tangent空间不同于mesh的tangent空间的地方在于，后者由mesh定义，而前者可以由artist自行定义。这就使得各向异性不再受制于mesh走向，而可以自行决定偏置方向。而且，改写成这个形式以后，椭球体矩阵${\bf{S}}$只需要三个参数（$S_{xx}$、$S_{xy}$、$S_{yy}$）外加法向量。
+
+### 使用SGGX模型
+《对马岛之魂》为了支持SGGX模型，并且设计相关材质，自定义了一个Substance Designer node给artist使用。Artist需要指定材质的
+
+- Gloss UV，即在UV方向上的roughness系数
+- direction，即椭球体的朝向
+
+然后，encode过程如下。
+
+1. 根据artist指定的normal和2x2各向异性GGX矩阵恢复SGGX矩阵的${\bf{S}}_{norm}$形式
+![encode1](./images/SIGCourse2020/encode1.png)
+2. 这是获得的矩阵${\bf{S}}$是可以进行线性插值的，可以用于生成mipmap，获得新的差值后的矩阵${\bf{S}}'$
+3. 将${\bf{S}}'$恢复成${\bf{S}}_{norm}$形式，先迭代计算向量${\bf{n}}'$，然后用${\bf{n}}'$计算矩阵${\bf{M}}_{{\bf{n}}'}$，最后计算$S_{xx}'$，$S_{xy}'$和$S_{yy}'$。
+![encode3](./images/SIGCourse2020/encode3.png)
+4. 存储的时候将normal压缩存储在BC5的纹理中，2x2的各向异性矩阵的三个系数$S_{xx}'$，$S_{xy}'$和$S_{yy}'$以如下公式压缩存储在BC7纹理中。
+
+$$
+[\sqrt{S_{xx}'}, \frac{1}{2}\frac{S_{xy}'}{\sqrt{S_{xx}'S_{yy}'}} + \frac{1}{2}, \sqrt{S_{yy}'}]
+$$
+
+这样两张纹理就足以表达各向异性SGGX的参数了。相较于SGGX论文保存整个3x3矩阵的方式节省了很多空间。
+
+接下来是decode过程。假设各向异性纹理的三个通道分别为$T_x$，$T_y$，$T_z$。
+
+1. 从纹理贴图中恢复$S_{xx}'$，$S_{xy}'$和$S_{yy}'$。
+
+$$
+\begin{aligned}
+S_{xx}' & = T_x^2 \\
+S_{xy}' & = T_x \times (T_y \times 2 - 1) \times T_z \\
+S_{yy}' & = T_z^2 \\
+\end{aligned}
+$$
+
+2. 求解2x2矩阵
+
+$$
+\begin{pmatrix}
+S_{xx}' & S_{xy}' \\
+S_{xy}' & S_{xy}'
+\end{pmatrix}
+$$
+的特征值$\alpha_t^2$和$\alpha_b^2$，以及$\alpha_t\alpha_b$。
+
+$$
+\begin{aligned}
+\Delta & = \sqrt{(S_{xx}' - S_{yy}')^2 + 4{S_{xy}'}^2} \\
+\alpha_t^2 & = \frac{1}{2}(S_{xx}' + S_{yy}' + \Delta) \\
+\alpha_b^2 & = \frac{1}{2}(S_{xx}' + S_{yy}' - \Delta) \\ 
+\alpha_t\alpha_b & = \sqrt{\alpha_t^2\alpha_b^2}
+\end{aligned}
+$$
+
+3. 然后计算各向异性的旋转角度的$\sin$和$\cos$值
+
+$$
+\begin{aligned}
+c & = \sqrt{\frac{1}{2} \times (\frac{S_{xx}' - S_{yy}'}{\Delta} + 1)} \\
+s & = \text{Sign}(S_{xy}')\times \sqrt{1 - c^2}
+\end{aligned}
+$$
+
+4. 最后根据旋转角度和mesh的tangent向量$\vec{t}_m$、bitangent向量$\vec{b}_m$计算各向异性的tangent向量$\vec{t}_a$、bitangent向量$\vec{b}_a$。
+
+$$
+\begin{aligned}
+\vec{t}_a & = c \times \vec{t}_m + s \times \vec{b}_m \\
+\vec{b}_a & = -s \times \vec{t}_m + c \times \vec{b}_m
+\end{aligned}
+$$
+
+5. 有了$\alpha_t^2$、$\alpha_b^2$、$\alpha_t\alpha_b$以及$\vec{t}_a$、$\vec{b}_a$，可以计算各向异性的NDF了
+
+$$
+D(\vec{h}) = \frac{(\alpha_t\alpha_b)^3}{\pi((\vec{t_a}\cdot\vec{h})^2\alpha_b^2+(\vec{b_a}\cdot\vec{h})^2\alpha_t^2+(\vec{n}\cdot\vec{h})^2(\alpha_t\alpha_b)^2)^2}
+$$
+
+可以看出，《对马岛之魂》在SGGX实际使用的时候，并没有像论文中提到的那样对矩阵${\bf{S}}$进行直接mipmap差值，这个近似会导致一定的artifact。另一个缺陷在于，当$\alpha_t$和$\alpha_b$一个很大一个很小的时候，效果并不理想，也会产生一定的artifact。
 
 ## Fuzz shading
 
