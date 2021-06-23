@@ -1,5 +1,12 @@
-# SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima
-这篇分享主要讲了《对马岛之魂》这款游戏中的一些图形学技术，包括
+<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+      tex2jax: {
+     inlineMath: [['$', '$']]}, messageStyle: "none" });
+</script>
+
+# SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima - part 1
+SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima主要分享了《对马岛之魂》这款游戏中的一些图形学技术，包括
 
 - 渲染强各向异性的材质
 - 渲染强asperity scattering的材质
@@ -16,7 +23,9 @@
   - 各向异性的asperity scattering BRDF
   - 次表面散射等
 
-整个分享主要分为四个部分，接下来逐个介绍。
+本文主要介绍分享的前两个部分。
+
+![xmind_part1](./images/SIGCourse2020/xmind_part1.png)
 
 ## 各向异性的高光（Anisotropic Specular）
 现有的各向异性GGX高光的一个很不方便的地方在于，它的tangent方向必须跟mesh一致。这使得美术对于渲染效果的控制不够精准。为了解决这个问题，《对马岛之魂》改进了了2015年的一篇paper——*The SGGX Microflake Distribution*。
@@ -162,14 +171,59 @@ $$
 可以看出，《对马岛之魂》在SGGX实际使用的时候，并没有像论文中提到的那样对矩阵${\bf{S}}$进行直接mipmap差值，这个近似会导致一定的artifact。另一个缺陷在于，当$\alpha_t$和$\alpha_b$一个很大一个很小的时候，效果并不理想，也会产生一定的artifact。
 
 ## Fuzz shading
+第二部分讲了一个用于渲染毛绒材质的BRDF模型。《对马岛之魂》用这个模型来渲染地面的苔藓和布料。通常搞一个新的BRDF的一般步骤都是测量，分析建模，最后弄一个曲线逼近。建模部分《对马岛之魂》参考了一篇2002年的论文：*The Secret of Velvety Skin*。
 
+### 测量与建模
+我们先看一下论文*The Secret of Velvety Skin*的测量和建模结果。
 
-## Skin shading
+下图展示了实拍的黑色绒布（B）圆柱体的照片，与之对比的是兰伯特圆柱体的理论效果（A）。可以看出绒布的视觉效果完全不遵循兰伯特反射，在A亮的地方B较暗，反之亦然。C图展示了B中各个位置的亮度。
 
+![BlackVelvet1](./images/SIGCourse2020/BlackVelvet1.png)
 
-## Detail maps
+进一步的测量展示出，入射光线和视角的不同会对BRDF的影响，如下图所示。左图展示的是入射光线和视角在同一个方向，同时随着$\theta$变化时的BRDF值（坐标图的纵轴，下同）。这个图可以理解为展示了backscattering的效果，越垂直于法向，backscattering越强。中图展示了入射光线平行于法向时，BRDF强度随视角的变化，即normal incidence。相对而言BRDF变化没有那么剧烈。右图则展示了入射光线和视角在法向的对称两侧（半向量等于法向）时，BRDF的强度随着夹角大小的变化。这个图反映的是完全镜面反射（specular reflection）的效果，可以看出越是接近掠射角（gazing angle），BRDF越强。
+
+![BlackVelvet2](./images/SIGCourse2020/BlackVelvet2.png)
+
+最后，*The Secret of Velvety Skin*对绒布的BRDF建模如下图所示。其中的虚线表示兰伯特反射的BRDF，这个模型满足了前面提到的几个观察：backscattering强，specular reflection较强。当然，如果入射角接近normal，图中红色的曲线形状还会有变化。
+
+![BlackVelvet3](./images/SIGCourse2020/BlackVelvet3.png)
+
+### 曲线逼近
+基于前面观测建模得到的BRDF，《对马岛之魂》搞了一个新的BRDF公式：
+
+$$
+\begin{aligned}
+L_d({\bf{v}}) & ={\bf{c}}_{f}\cdot f \\
+f & = p(\theta, \phi)g_{scatter} \\
+p(\theta, \phi) & = r_{norm} P_{Schlick}(k, g_{DotFuzz}(\theta, \phi)) \\
+P_{Schlick}(k, d) & = \frac{1}{4\pi}\frac{1-k^2}{(1+kd)^2} \\
+\end{aligned}
+$$
+
+解释一下公式的含义。这个BRDF公式主要是用于渲染绒布的漫反射的，因此它用于替代兰伯特反射模型。$c_f$表示绒布的本身的颜色，$f$表示我们用于替代的BRDF模型。$P_{Schlick}(k, d)$是作者搞出这个BRDF的核心，这个公式是Schlick对Henyey-Greenstein方程的近似实现，为了将视角、入射光线方向和绒布的毛绒方向融合进来，作者引入$g_{DotFuzz}(\theta, \phi)$函数，替代$P_{Schlick}(k, d)$中的$\cos$项$d$。$r_{norm}$项是为了将$P_{Schlick}(k, d)$归一化而引入的，由于$r_{norm}$不存在一个解析解，所以这个函数其实是一个经验函数，它的引入也会导致一定的能量损失。最后$g_{scatter}$项是为了将函数曲线收拢到跟前面的建模曲线类似的情况而添加的，也可以理解为一个经验项。
+
+完整的函数定义和图像可以参考[作者给出的链接](https://www.desmos.com/calculator/hwp7tga0vk)。
+
+![BRDF1](./images/SIGCourse2020/BRDF1.png)
+
+函数图像看起来跟模型还是有点相似的，误差主要出现在backscattering部分，但是总体而言已经很接近了。虽然实际使用起来不知道效果怎么样，感觉这么复杂的一个公式会使得计算量暴增。
+
+### 改进
+在《对马岛之魂》上线以后，为了解决这个BRDF的能量损失问题，作者又搞出了一个基于SGGX的版本，将前面的$p(\theta, \phi)$替换为$p_{SGGX}(\theta, \phi)$：
+
+$$
+\begin{aligned}
+p_{SGGX}(\theta, \phi) & = \frac{D(\vec{h})}{4\sigma(\vec{u})} \\
+D(\vec{h}) & = \frac{\alpha^3}{\pi((\vec{h}\cdot\vec{t})^2(1-\alpha^2)+\alpha^2)^3} \\
+\sigma(\vec{u}) & = \sqrt{1-(\vec{u}\cdot\vec{t})^2(1-\alpha^2)}
+\end{aligned}
+$$
+
+其中，$\vec{h}$表示half vector，$\vec{u}$是入射光方向，$\vec{v}$是视角方向，$\vec{t}$表示绒毛的朝向。完整图像可以参考[链接](https://www.desmos.com/calculator/botqtjpnus)，具体的推导可以参考作者的PPT，不在赘述。
+
 
 
 # Reference
-1. The SGGX Microflake Distribution
-2. 
+1. [SIGGRAPH 2020 Course](https://blog.selfshadow.com/publications/s2020-shading-course/)
+2. Eric Heitz, Jonathan Dupuy, Cyril Crassin, and Carsten Dachsbacher. The SGGX microflake distribution. ACM Trans. Graph., 34(4), July 2015.
+3. Jan Koenderink and Sylvia Pont. The secret of velvety skin. Machine Vision and Applications, 14(4):260–268, 2003.
