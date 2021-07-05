@@ -381,7 +381,28 @@ FDirectLighting SubsurfaceBxDF( FGBufferData GBuffer, half3 N, half3 V, half3 L,
 ```
 
 #### Preintegrated Skin
-Preintegrated skin模型是Subsurface model在皮肤染情况下的特化，效果类似但是效率更高。参数与Subsurface model一致，不再列举。
+Preintegrated skin模型是Subsurface model在皮肤染情况下的特化，效果类似但是效率更高，通常用在移动端。相对于GPU Pro 2中介绍的完整的Preintegrated Skin Shading，这个model做了一些简化，具体包括：
+
+1. 只在Shadow域进行了预积分，Diffuse和Specular都采用了DefaultLit，也就是跟普通渲染没啥区别
+2. UE4的Preintegrated Texture是一张灰度图，具体的用法是用NoL和Opacity（实际是1-Opacity）对它进行采样，然后乘上Subsurface Color
+3. UE4的这个模型其实是一个高效但是并不精确的方法，因此Epic官方推荐使用Subsurface Profile模型渲染高精度的皮肤
+
+BxDF代码如下：
+
+```C++
+FDirectLighting PreintegratedSkinBxDF( FGBufferData GBuffer, half3 N, half3 V, half3 L, float Falloff, float NoL, FAreaLight AreaLight, FShadowTerms Shadow )
+{
+	FDirectLighting Lighting = DefaultLitBxDF( GBuffer, N, V, L, Falloff, NoL, AreaLight, Shadow );
+	
+	float3 SubsurfaceColor = ExtractSubsurfaceColor(GBuffer);
+	float Opacity = GBuffer.CustomData.a;
+
+	float3 PreintegratedBRDF = Texture2DSampleLevel(View.PreIntegratedBRDF, View.PreIntegratedBRDFSampler, float2(saturate(dot(N, L) * .5 + .5), 1 - Opacity), 0).rgb;
+	Lighting.Transmission = AreaLight.FalloffColor * Falloff * PreintegratedBRDF * SubsurfaceColor;
+
+	return Lighting;
+}
+```
 
 #### Clear Coat
 Clear coat模型包括以下参数。
@@ -452,7 +473,9 @@ FDirectLighting ClearCoatBxDF( FGBufferData GBuffer, half3 N, half3 V, half3 L, 
 代码经过了一定程度的精简。总的来说，UE4对Clear Coat Layer的specular乘上系数`ClearCoat`，对Base Layer的specular和diffuse乘上系数`lerp(NoL, FresnelCoeff * BottomContext.NoL * Transmission, ClearCoat)`，其他的计算公式与`DefaultLit`模型一致。
 
 #### Subsurface Profile
-Subsurface Profile也是用于渲染皮肤的模型，是Preintegrated Skin模型的加强版，效果更佳真实。不再赘述。
+Subsurface Profile也是用于渲染皮肤的模型，是Preintegrated Skin模型的加强版，效果更真实，常用于高质量的皮肤渲染上。不再赘述。
+
+[TODO] 补充细节
 
 #### Two Sided Foliage
 Two Sided Foliage用于渲染较薄的次表面散射材质，例如树叶、花瓣等。它可以模拟光线穿过材质的效果，比Subsurface model更真实。

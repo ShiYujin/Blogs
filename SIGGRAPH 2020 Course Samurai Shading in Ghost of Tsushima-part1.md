@@ -189,18 +189,20 @@ $$
 ![BlackVelvet3](./images/SIGCourse2020/BlackVelvet3.png)
 
 ### 曲线逼近
-基于前面观测建模得到的BRDF，《对马岛之魂》搞了一个新的BRDF公式：
+基于前面观测建模得到的BRDF，《对马岛之魂》搞了一个新的Diffuse BRDF公式：
 
 $$
 \begin{aligned}
-L_d({\bf{v}}) & ={\bf{c}}_{f}\cdot f \\
-f & = p(\theta, \phi)g_{scatter} \\
-p(\theta, \phi) & = r_{norm} P_{Schlick}(k, g_{DotFuzz}(\theta, \phi)) \\
-P_{Schlick}(k, d) & = \frac{1}{4\pi}\frac{1-k^2}{(1+kd)^2} \\
+L_d({\bf{v}}) & ={\bf{c}}_{fuzz}\cdot p(\theta_h, \phi_h) \cdot g_{scatter} \\
+p(\theta_h, \phi_h) & = r_{norm} P_{Schlick}(k_{Schlick}, g_{DotFuzz}(\theta_h, \phi_h)) \\
+g_{DotFuzz}(\theta_h, \phi_h) & = \sqrt{1-(\cos{\theta_{tilt}} \cdot \cos{\theta_h} + \sin{\theta_{tilt} \cdot \cos{\phi_h}})^2} \\
+P_{Schlick}(k, d) & = \frac{1-k^2}{4\pi(1+kd)^2} \\
 \end{aligned}
 $$
 
-解释一下公式的含义。这个BRDF公式主要是用于渲染绒布的漫反射的，因此它用于替代兰伯特反射模型。$c_f$表示绒布的本身的颜色，$f$表示我们用于替代的BRDF模型。$P_{Schlick}(k, d)$是作者搞出这个BRDF的核心，这个公式是Schlick对Henyey-Greenstein方程的近似实现，为了将视角、入射光线方向和绒布的毛绒方向融合进来，作者引入$g_{DotFuzz}(\theta, \phi)$函数，替代$P_{Schlick}(k, d)$中的$\cos$项$d$。$r_{norm}$项是为了将$P_{Schlick}(k, d)$归一化而引入的，由于$r_{norm}$不存在一个解析解，所以这个函数其实是一个经验函数，它的引入也会导致一定的能量损失。最后$g_{scatter}$项是为了将函数曲线收拢到跟前面的建模曲线类似的情况而添加的，也可以理解为一个经验项。
+其中，${\bf{c}}_{fuzz}$表示布料的diffuse颜色，$\theta_h$表示半向量$\vec{h}$和法向的夹角，$\phi_h$表示半向量$\vec{h}$和y轴的夹角。$\theta_{tilt}$表示绒毛的朝向与法向的夹角。
+
+这个BRDF公式主要是用于渲染绒布的漫反射的，因此它用于替代兰伯特反射模型$L_{lambert} = c_{diff}\frac{\cos(\theta_l)}{\pi}$。$P_{Schlick}(k, d)$是作者搞出这个BRDF的核心，这个公式是Schlick对Henyey-Greenstein方程的近似实现，为了将视角、入射光线方向和绒布的毛绒方向融合进来，作者引入$g_{DotFuzz}(\theta, \phi)$函数，替代$P_{Schlick}(k, d)$中的$\cos$项$d$。$r_{norm}$项是为了将$P_{Schlick}(k, d)$归一化而引入的，由于$r_{norm}$不存在一个解析解，所以这个函数其实是一个经验函数，它的引入也会导致一定的能量损失。最后$g_{scatter}$项是为了将函数曲线收拢到跟前面的建模曲线类似的情况而添加的，也可以理解为一个经验项。
 
 完整的函数定义和图像可以参考[作者给出的链接](https://www.desmos.com/calculator/hwp7tga0vk)。
 
@@ -213,15 +215,35 @@ $$
 
 $$
 \begin{aligned}
-p_{SGGX}(\theta, \phi) & = \frac{D(\vec{h})}{4\sigma(\vec{u})} \\
-D(\vec{h}) & = \frac{\alpha^3}{\pi((\vec{h}\cdot\vec{t})^2(1-\alpha^2)+\alpha^2)^3} \\
-\sigma(\vec{u}) & = \sqrt{1-(\vec{u}\cdot\vec{t})^2(1-\alpha^2)}
+L_d({\bf{v}}) & ={\bf{c}}_{fuzz}\cdot p_{SGGX}(\theta_h, \phi_h)\cdot g_{scatter} \\
+p_{SGGX}(\theta_h, \phi_h) & = \frac{D(g_{HalfDotFuzz}(\theta_h, \phi_h))}{4\sigma(\theta_l, \phi_l)} \\
+g_{HalfDotFuzz}(\theta_h, \phi_h) & = \cos{\theta_{tilt}} \cdot \cos{\theta_h} + \sin{\theta_{tilt} \cdot \cos{\phi_h}} \\
+D(d) & = \frac{\alpha_{SGGX}^3}{\pi(d^2(1-\alpha_{SGGX}^2)+\alpha_{SGGX}^2)^3} \\
+\sigma(d) & = \sqrt{1+g_{uDotFuzz}(\theta_l, \phi_l)^2(\alpha_{SGGX}^2 - 1)} \\
+g_{uDotFuzz}(\theta_l, \phi_l) & = \cos{\theta_{tilt}} \cdot \cos{\theta_l} + \sin{\theta_{tilt} \cdot \cos{\phi_l}} \\
 \end{aligned}
 $$
 
-其中，$\vec{h}$表示half vector，$\vec{u}$是入射光方向，$\vec{v}$是视角方向，$\vec{t}$表示绒毛的朝向。完整图像可以参考[链接](https://www.desmos.com/calculator/botqtjpnus)，具体的推导可以参考作者的PPT，不在赘述。
+其中，$\theta_l$表示光线方向和法向的夹角，$\phi_l$表示光线方向和y轴的夹角。完整图像可以参考[链接](https://www.desmos.com/calculator/botqtjpnus)，具体的推导可以参考作者的PPT，不在赘述。
 
+### 实现细节
+在实际实现中，作者表示对模型做了一些近似，包括
 
+- $g_{scatter}$的控制系数$d = 0.5$
+- spread = 0.9，即$k_{Schlick} \approx -0.1$，$_{SGGX}\approx0.95$
+- 绒毛的朝向$\theta_{tilt}$和顶点的法向一致
+- 绒毛的颜色${\bf{c}}_{fuzz}=5\cdot{\bf{c}}_{Lambert}$
+
+同时，引入新的参数`Fuzziness`用于混合Lambert BRDF和Fuzz BRDF，即：
+
+$$
+L_{Diffuse} = \text{lerp}(L_{Lambert}, L_{Fuzz}, \text{Fuzziness})
+$$
+
+### 效果
+下图展示了Fuzziness从0（左）到1（右）渐变时的效果，步长=0.1，实现在UE4上。
+
+![Fuzziness](./images/SIGCourse2020/Fuzziness0-1.png)
 
 # Reference
 1. [SIGGRAPH 2020 Course](https://blog.selfshadow.com/publications/s2020-shading-course/)
