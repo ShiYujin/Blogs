@@ -11,25 +11,27 @@
 ![xmind_part2](./images/SIGCourse2020/xmind_part2.png)
 
 ## Skin shading
-在皮肤渲染这一块，《对马岛之魂》采用的是预积分（pre-integrated）的方法。在探讨具体的方法之前，我们先了解一下预积分方法背后的理论和原理。
-
-### 基于预积分的皮肤渲染
 皮肤是一种有很强的的次表面散射（subsurface scattering）现象的材质，所谓次表面散射现象，指的是光线打在材质表面的时候，有一部分会进入材质内部，在材质内部多次弹射后再离开材质表面，如下图所示。
 
 ![subsurfacescattering](./images/diagram_scattering.png)
 
-这个现象如果严格按照物理原理进行实现，应该是在光线出射点对周围一个小范围内的入射光线进行积分，并以一定的比例加到当前出射点的出射光线上。但是在实时渲染中这个方法很明显是不可能实现的。对此，有两个思路可以进行近似，一个思路是将部分积分进行预计算，然后保存成纹理，在实时渲染中直接采样纹理；另一个思路是屏幕空间的次表面散射（screen-space subsurface scattering），具体做法是先正常渲染，然后在屏幕空间做卷积，根据次表面散射成都设置卷积核的大小。相比之下，预积分的方法速度更快，单个pixel shader就可以完成，对管线的修改很有限，便于与其他渲染效果集成，所以更受青睐。
+这个现象如果严格按照物理原理进行实现，应该是在光线出射点对周围一个小范围内的入射光线进行积分，并以一定的比例加到当前出射点的出射光线上。但是在实时渲染中这个方法很明显是不可能实现的。对此，有两个思路可以进行近似，一种是渲染高清的，subsurface scattering的方法，包括separable subsurface scattering、screen space subsurface scattering等，这个方法需要多个pass才能完成，本质上是利用图像卷积或者模糊来近似subsurface scattering效果。另一种方法是快速但是没那么精确的，pre-integrated skin shading方法，通常用在移动端，将散射值预先渲染好保存在纹理中，然后实时渲染时进行采样，单个pass即可解决。
 
+顺便说一句，这两种对皮肤的渲染方法UE4都有支持，前者有subsurface shading model，后者有PreintegratedSkin shading model。
+
+而《对马岛之魂》采用的是预积分（pre-integrated）的方法。在探讨具体的方法之前，我们先了解一下预积分方法背后的理论和原理。
+
+### 基于预积分的皮肤渲染
 接下来具体看一下预积分方法的思路。首先考虑一个问题，什么情况下皮肤会产生次表面散射现象产生？可以肯定的一点是，当固定的平行光照射在完全平整的表面上的时候，是看不出次表面散射的，因为相邻处产生的折射光线非常平均。只有在这几种情况会有明显的次表面散射现象：
 
-1. mesh曲率变化大
-2. normal map上有小的bump
+1. mesh的尺度上，曲率变化大的位置
+2. 小尺度上，normal map上有小的bump
 3. 阴影处
 
 这三种情况分别处理，依次对应
 
 1. large-scale feature
-2. small-scale feature
+2. small surface detail
 3. shadow
 
 #### Scattering and diffuse light
@@ -90,7 +92,7 @@ $$
 基本原理是，曲率越大，意味着单位$\Delta p$对应的$\Delta N$越大，所以可以简单地利用$\Delta N/\Delta P$来求曲率。当然在对纹理采样的时候，需要将$1/r$归一化到$[0,1]$之间。
 
 ```C++
-float curve = saturate(length(fwidth(blurNormalDirection)) / length(fwidth(i.posWorld)) * _CurveFactor);
+float curve = saturate(length(fwidth(NormalDirection)) / length(fwidth(i.posWorld)) * _CurveFactor);
 ```
 
 #### Scattering and normal maps
@@ -111,7 +113,9 @@ float curve = saturate(length(fwidth(blurNormalDirection)) / length(fwidth(i.pos
 《对马岛之魂》主要做了这三个方面的改进：
 1. 对punctual light，采用linear scattering profile或cylindrical integration
 2. 对SH lighting LUT，在球面积分时采用radial profile
-3. 使用directional curvature表现次表面散射现象。
+3. 使用directional curvature代替mean curvature采样纹理。
+
+其中比较明显的改进集中在第三点上。
 
 前面的模型讨论的是平行光照，但是《对马岛之魂》认为，对所有的光照采用同样的计算方法是不合适的，同时提出，对平行光应该采用方向曲率而不是平均曲率，而AO之类的光源可以采用平均曲率计算。下图展示了不同曲率的计算方法在平行光下的区别。图中上面一行表示的是相应的曲率值。可以看出使用方向曲率可以减少不自然的次表面散射现象（比如鼻尖附近）。
 
@@ -143,7 +147,11 @@ $$
 \kappa_{\vec{I}} = \vec{I}^T\text{II}\vec{I}
 $$
 
+推测这里的$\vec{I}$应该是光线在tangent平面的投影，是个二维向量。
+
 3. 然后利用这个方向曲率，采用LUT。
+
+改进之后的skin shading，在鼻梁、鼻翼和嘴唇部分有一些区别，但是也说不出改善了多少。
 
 ## Detail map
 在detail map这部分，《对马岛之魂》采用的是合成纹理的方法，具体来说，是将目标纹理拆分为两部分：

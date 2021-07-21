@@ -706,7 +706,7 @@ F_0=0.16\cdot reflectance^2
 $$
 其中，$reflectance$由物体表面的材质定义。
 
-对于dielectric，$F_0$通过金属度metallic和`basecolor`来计算：
+对于conductors，$F_0$通过金属度metallic和`basecolor`来计算：
 $$
 F_0=baseColor\cdot metallic
 $$

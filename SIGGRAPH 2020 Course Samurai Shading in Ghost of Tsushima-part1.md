@@ -11,7 +11,7 @@ SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima主要分享了《对�
 - 渲染强各向异性的材质
 - 渲染强asperity scattering的材质
 - 提升皮肤渲染的准确性
-- 更高效地使用detailed map
+- 改进的detailed map
 
 《对马岛之魂》的背景放在13世纪封建社会的日本，玩家操作一名日本武士，为了解放被蒙古入侵的对马岛的故事。整个游戏的渲染风格不是写实（photorealism），而是风格化的（stylized realism）。用到的渲染管线多数是延迟管线，少许前向管线，具体的划分如下。
 
@@ -28,57 +28,60 @@ SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima主要分享了《对�
 ![xmind_part1](./images/SIGCourse2020/xmind_part1.png)
 
 ## 各向异性的高光（Anisotropic Specular）
-现有的各向异性GGX高光的一个很不方便的地方在于，它的tangent方向必须跟mesh一致。这使得美术对于渲染效果的控制不够精准。为了解决这个问题，《对马岛之魂》改进了了2015年的一篇paper——*The SGGX Microflake Distribution*。
+<!-- 现有的各向异性GGX高光的一个很不方便的地方在于，它的tangent方向必须跟mesh一致。这使得美术对于渲染效果的控制不够精准。为了解决这个问题，《对马岛之魂》改进了了2015年的一篇paper——*The SGGX Microflake Distribution*。 -->
+《对马岛之魂》的各向异性高光算法改进自2015年的一篇paper——*The SGGX Microflake Distribution*。在介绍SGGx以及《对马岛之魂》的改进之前，我们先看一下Microflake theory是怎么一回事。
 
-### The SGGX Microflake Distribution
-SGGX这篇论文提出了一种名为SGGX的渲染模型，用于volume rendering，比如毛发、纺织物等。这类物体的渲染有一个模型，叫Microflake。
+### Microflake theory
+学习过PBR的同学应该对Microfacet theory比较熟悉，Microfacet theory讲的是对于一个粗糙的**表面**，可以视为是由无数个绝对光滑的微小表面（微表面）构成的。每个微表面都遵循镜面反射定律，而在宏观上，利用NDF来描述整体的特性。
 
-先解释一下Microflake是啥。这个词的中文“微薄片”听起来很奇怪，所以就直接用英文了。搞过PBR的话应该对Microfacet比较熟悉，Microfacet就是微表面，指的是**平面**上的微小凸起，这个Microfacet theory是描述**平面**特性的物理模型，那么与之对应的，Microflake是用来描述**体素**特性的物理模型。如下图所示，每个Microflake都有朝向，会对光线进行反射，微观上Microflake的表现在宏观上就会呈现出光线与体素（例如雾）交互的现象。
+类似地，Microflake theory描述的是**体素**的物理模型，常用于毛发、针织物之类物体的volume rendering。Microflake theory假设，在一个体素内充斥着各种椭球体的flakes，每个flakes都有一定的朝向性，也是绝对光滑的。光线在穿过这个体素的时候，会与这些flakes发生作用。但是不同于Microfacet theory，Microflake theory没有解决如何从宏观上描述flakes的形态的问题。
 
 ![Microflake](./images/SIGCourse2020/microflake.png)
 
-在SGGX之前，此类的渲染算法有两个问题
-
-1. 模型复杂，渲染开销大。
-2. 不易downsample，进行低分辨率渲染时性价比低。
-
-因此，为了应对现有模型的问题，SGGX是一种便于LoD，也更加简单的模型。
+### The SGGX Microflake Distribution
+为了完善Microflake theory，SGGX应运而出。SGGX希望解决的是，如何在宏观上描述flakes的行为（类似于Microfacet theory用NDF描述微表面的朝向性），使得Microflake theory可以支持LoD。
 
 SGGX模型的关键点有两个
 
-1. 提出了用投影面积替代roughness的方案。
-2. 提出了用椭球体（ellipsoid）来描述Microflake模型。
+1. 提出了用投影面积描述flakes的宏观行为，类似于Microfacet theory中的roughness参数。
+2. 提出了用椭球体（ellipsoid）来编码投影面积的想法。
 
 下面具体说说这两个关键点的含义。
 
-![roughness](./images/SIGCourse2020/roughness.png)
+<!-- ![roughness](./images/SIGCourse2020/roughness.png) -->
 
-我们假设体素内充斥着稀疏的Microflake，每个Microflake可以理解为一个微小的**薄片**，当光线打到它的任意一侧后，会遵循镜面反射定律。在这个模型下，当我们计算一束光线在体素内传播这个过程时，需要计算光线如何与Microflake发生碰撞，以及当光线与某一个Microflake发生碰撞后，光路的改变情况。
-
-对此，我们可以借鉴Microfacet理论的推导方法。只不过Microfacet理论里平行光打到凹凸不平的平面上，而Microflake理论是平行光射入体素里。Microfacet理论里每个微小的平面会独立反射光线，微小表面的法线分布情况即宏观的roughness参数；同样，Microflake理论里，光线射入体素里面后，会与每个Microflake片元交互，发生反射。那么在Microflake理论里，如何衡量体素的roughness呢？答案是看每个Microflake在光线方向上的投影，投影面积越大，意味着光线被Microflake反射的概率越大，也就是粗糙度越大。
+光线在体素内部与flakes的相互作用有两个环节，一个是光线与flakes相交，另一个是光线被flakes反射。类似于ray tracing算法中追踪光线的两个步骤（求交与交互）。在第一个环节，光线与flakes发生碰撞的概率可以认为与flakes在光线方向上的投影面积成正比，投影面积越大，意味着越容易碰到光线。如下图所示。
 
 ![Intersection](./images/SIGCourse2020/Intersection.png)
 
-将Microflake理论中微小薄片在宏观上的投影面积等效于Microfacet理论中的roughness，这是SGGX模型的第一个洞见。接下来的问题是，如何宏观上表示这一堆零散的Microflake，将它们的朝向或者说投影面积用类似于Microfacet理论中的NDF函数表示呢？
+而在第二个过程，我们要研究的是光线如何被flakes反射。这时，flakes在光线的tangent方向（即normal的垂直方向）上的投影面积越大，光线被反射地越分散。此时flakes在光线tangent方向上的投影面积，就类似于Microfacet theory中的roughness这个参数了。
+
+![tangentroughness](./images/SIGCourse2020/tangentroughness.png)
+
+需要注意的是，这第二点其实并没有严格的数学推导，只是基于直觉的假设。
+
+将Microflake理论中flakes的（包括在光线方向以及光线的tangent方向的）投影面积等效于Microfacet理论中的roughness，这是SGGX模型的第一个洞见。接下来的问题是，如何宏观上表示这一堆零散的Microflake，将它们的朝向或者说投影面积用类似于Microfacet理论中的NDF函数表示呢？
 
 这就引出了SGGX理论的第二个洞见——椭球体模型。如下图所示。
 
 ![ProjectedArea](./images/SIGCourse2020/ProjectedArea.png)
 
-将不知到如何分布的一堆Microflake整合为一个完整的椭球体，这一步直觉上是可行的，但是并没有严格的理论论证，只是SGGX理论给出的一个假设。这一假设也是SGGX模型的误差来源。
+将不知到如何分布的一堆Microflake整合为一个完整的椭球体，这一步直觉上是可行的，但是同样缺乏严格的理论论证，只是SGGX理论给出的一个假设。这一假设也是SGGX模型的误差来源之一。
 
 所以，我们就不经任何严格推理地假设，一块体素中的所有Microflake刚好可以构成一个椭球体，并且这个椭球体在各个方向上的投影刚好等于所有Microflake的投影的总和。那么，相对于Microfacet理论用两个粗糙度系数$\alpha_x$和$\alpha_y$，描述椭球体需要一个3x3的矩阵。
 
 ![SGGXMatrix](./images/SIGCourse2020/SGGXMatrix.png)
 
+好在这个3x3的矩阵是个对称矩阵，只有6个独立的参数。
+
 到目前为止，还有一个问题一直没有提到，那就是SGGX究竟为什么叫SGGX？
 
 ![SGGX](./images/SIGCourse2020/SGGX.png)
 
-SGGX的全称是symmetric GGX。GGX是Microfacet理论的一个法向分布模型，它是定义在半球面上的法向分布，这对描述表面属性的Microfacet理论是很好理解的，但是对于描述体素的Microflake理论而言，半球面分布的GGX很明显是不够的。而SGGX则是将半球面上分布的GGX对称到整个球面上，这也是symmetric S的含义。
+SGGX的全称是Symmetric GGX。GGX是Microfacet理论的一个法向分布模型，它是定义在半球面上的法向分布，这对描述表面属性的Microfacet理论是很好理解的，但是对于描述体素的Microflake理论而言，半球面分布的GGX很明显是不够的。而SGGX则是将半球面上分布的GGX对称到整个球面上，这也是symmetric S的含义。
 
 ### 改进的SGGX模型
-SGGX模型用一个3x3的矩阵来描述椭球的形状，但是这个3x3的矩阵过于抽象，不太容易将这九个参数跟某个物理量（例如粗糙度之类的）对应起来，因此更实用的一个形式是将这个矩阵分解为特征向量与特征值相乘的形式：
+SGGX模型用一个3x3的矩阵来描述椭球的形状，但是这个3x3的矩阵过于抽象，不太容易将这6个参数跟某个物理量（例如roughness之类的）对应起来，因此更实用的一个形式是将这个矩阵分解为特征向量与特征值相乘的形式：
 
 ![SMatrix](./images/SIGCourse2020/SMatrix.png)
 
@@ -93,7 +96,9 @@ SGGX模型用一个3x3的矩阵来描述椭球的形状，但是这个3x3的矩�
 我们把这个矩阵称为${\bf{S}}_{norm}$形式。注意，这里的$\vec{t}$、$\vec{b}$、$\vec{n}$向量并不是GGX里面用到的mesh的tangent空间，而是各向异性的tangent空间旋转对齐到normal后的tangent空间。各向异性的tangent空间不同于mesh的tangent空间的地方在于，后者由mesh定义，而前者可以由artist自行定义。这就使得各向异性不再受制于mesh走向，而可以自行决定偏置方向。而且，改写成这个形式以后，椭球体矩阵${\bf{S}}$只需要三个参数（$S_{xx}$、$S_{xy}$、$S_{yy}$）外加法向量。
 
 ### 使用SGGX模型
-《对马岛之魂》为了支持SGGX模型，并且设计相关材质，自定义了一个Substance Designer node给artist使用。Artist需要指定材质的
+《对马岛之魂》引入SGGX的初衷，在于希望能够自主控制各向异性参数的tangent方向。默认情况下，各向异性参数的tangent方向是跟随mesh的，这就阻碍了美术的表现力。如果能将tangent方向与各向异性参数一起保存起来，美术效果就可以做的更好。再加上SGGX对LoD的良好支持，完美~
+
+为了支持SGGX模型，并且设计相关材质，《对马岛之魂》自定义了一个Substance Designer node给artist使用。Artist需要指定材质的
 
 - Gloss UV，即在UV方向上的roughness系数
 - direction，即椭球体的朝向
@@ -111,7 +116,9 @@ $$
 [\sqrt{S_{xx}'}, \frac{1}{2}\frac{S_{xy}'}{\sqrt{S_{xx}'S_{yy}'}} + \frac{1}{2}, \sqrt{S_{yy}'}]
 $$
 
-这样两张纹理就足以表达各向异性SGGX的参数了。相较于SGGX论文保存整个3x3矩阵的方式节省了很多空间。
+这样一张额外的纹理就足以表达各向异性SGGX的参数了。相较于SGGX论文保存整个3x3矩阵的6个参数的方式节省了很多空间。
+
+![AnisoTexture](./images/SIGCourse2020/AnisoTexture.png)
 
 接下来是decode过程。假设各向异性纹理的三个通道分别为$T_x$，$T_y$，$T_z$。
 
@@ -144,7 +151,7 @@ $$
 \end{aligned}
 $$
 
-3. 然后计算各向异性的旋转角度的$\sin$和$\cos$值
+3. 然后计算mesh的tangent space到anisotropic的tangent space的旋转角度的$\sin$和$\cos$值
 
 $$
 \begin{aligned}
@@ -168,23 +175,28 @@ $$
 D(\vec{h}) = \frac{(\alpha_t\alpha_b)^3}{\pi((\vec{t_a}\cdot\vec{h})^2\alpha_b^2+(\vec{b_a}\cdot\vec{h})^2\alpha_t^2+(\vec{n}\cdot\vec{h})^2(\alpha_t\alpha_b)^2)^2}
 $$
 
-可以看出，《对马岛之魂》在SGGX实际使用的时候，并没有像论文中提到的那样对矩阵${\bf{S}}$进行直接mipmap差值，这个近似会导致一定的artifact。另一个缺陷在于，当$\alpha_t$和$\alpha_b$一个很大一个很小的时候，效果并不理想，也会产生一定的artifact。
+可以看出，《对马岛之魂》在SGGX实际使用的时候，并没有像论文中提到的那样对矩阵${\bf{S}}$进行直接mipmap差值，这个近似会导致一定的误差。另一个缺陷在于，当$\alpha_t$和$\alpha_b$一个很大一个很小的时候，效果并不理想，也会产生一定的artifact。
 
 ## Fuzz shading
-第二部分讲了一个用于渲染毛绒材质的BRDF模型。《对马岛之魂》用这个模型来渲染地面的苔藓和布料。通常搞一个新的BRDF的一般步骤都是测量，分析建模，最后弄一个曲线逼近。建模部分《对马岛之魂》参考了一篇2002年的论文：*The Secret of Velvety Skin*。
+第二部分讲了一个用于渲染毛绒材质的BRDF模型。《对马岛之魂》用这个BRDF来渲染地面的苔藓和马匹的绒毛。通常搞一个新的BRDF的一般步骤都是测量，分析建模，最后弄一个曲线逼近。建模部分《对马岛之魂》参考了一篇2002年的论文：*The Secret of Velvety Skin*。
 
 ### 测量与建模
 我们先看一下论文*The Secret of Velvety Skin*的测量和建模结果。
 
-下图展示了实拍的黑色绒布（B）圆柱体的照片，与之对比的是兰伯特圆柱体的理论效果（A）。可以看出绒布的视觉效果完全不遵循兰伯特反射，在A亮的地方B较暗，反之亦然。C图展示了B中各个位置的亮度。
+下图展示了实拍的黑色绒布圆柱体的照片（B），与之对比的是兰伯特圆柱体的理论效果（A）。可以看出绒布的视觉效果完全不遵循兰伯特反射，在A亮的地方B较暗，反之亦然。C图展示了B中各个位置的亮度。
 
 ![BlackVelvet1](./images/SIGCourse2020/BlackVelvet1.png)
 
-进一步的测量展示出，入射光线和视角的不同会对BRDF的影响，如下图所示。左图展示的是入射光线和视角在同一个方向，同时随着$\theta$变化时的BRDF值（坐标图的纵轴，下同）。这个图可以理解为展示了backscattering的效果，越垂直于法向，backscattering越强。中图展示了入射光线平行于法向时，BRDF强度随视角的变化，即normal incidence。相对而言BRDF变化没有那么剧烈。右图则展示了入射光线和视角在法向的对称两侧（半向量等于法向）时，BRDF的强度随着夹角大小的变化。这个图反映的是完全镜面反射（specular reflection）的效果，可以看出越是接近掠射角（gazing angle），BRDF越强。
+进一步的测量展示出，入射光线和视角的不同会对BRDF的影响，如下图所示。左图展示的是入射光线和视角在同一个方向，同时随着$\theta$变化时的BRDF值（坐标图的纵轴，下同）。这个图可以理解为展示了backscattering的效果，越垂直于法向，backscattering越强。中图展示了入射光线平行于法向时，BRDF强度随视角的变化，即normal incidence。相对而言BRDF变化没有那么剧烈（注意这个图的纵坐标被拉伸了，其值并不大）。右图则展示了入射光线和视角在法向的对称两侧（半向量等于法向）时，BRDF的强度随着夹角大小的变化。这个图反映的是完全镜面反射（specular reflection）的效果，可以看出越是接近掠射角（gazing angle），BRDF越强。
 
 ![BlackVelvet2](./images/SIGCourse2020/BlackVelvet2.png)
 
-最后，*The Secret of Velvety Skin*对绒布的BRDF建模如下图所示。其中的虚线表示兰伯特反射的BRDF，这个模型满足了前面提到的几个观察：backscattering强，specular reflection较强。当然，如果入射角接近normal，图中红色的曲线形状还会有变化。
+总结起来两个点
+
+- strong back scattering lobe
+- smaller forward scattering lobe
+
+最后，*The Secret of Velvety Skin*对绒布的BRDF建模如下图所示。其中的虚线表示兰伯特反射的BRDF，这个模型满足了前面提到的几个观察：backscattering强，specular reflection较弱。当然，如果入射角接近normal，图中红色的曲线形状还会有变化。
 
 ![BlackVelvet3](./images/SIGCourse2020/BlackVelvet3.png)
 
@@ -226,8 +238,12 @@ $$
 
 其中，$\theta_l$表示光线方向和法向的夹角，$\phi_l$表示光线方向和y轴的夹角。完整图像可以参考[链接](https://www.desmos.com/calculator/botqtjpnus)，具体的推导可以参考作者的PPT，不在赘述。
 
+![BRDF2](./images/SIGCourse2020/BRDF2.png)
+
 ### 实现细节
-在实际实现中，作者表示对模型做了一些近似，包括
+公式中的几个参数是可以调整的，比如$g_{scatter}$的控制系数density，斑驳的大小spread，绒毛朝向$\theta_{tilt}$，以及绒毛的颜色${\bf{c}}_{fuzz}$。
+
+在《对马岛之魂》的实现中，这些参数的取值为
 
 - $g_{scatter}$的控制系数$d = 0.5$
 - spread = 0.9，即$k_{Schlick} \approx -0.1$，$_{SGGX}\approx0.95$
@@ -239,11 +255,6 @@ $$
 $$
 L_{Diffuse} = \text{lerp}(L_{Lambert}, L_{Fuzz}, \text{Fuzziness})
 $$
-
-### 效果
-下图展示了Fuzziness从0（左）到1（右）渐变时的效果，步长=0.1，实现在UE4上。
-
-![Fuzziness](./images/SIGCourse2020/Fuzziness0-1.png)
 
 # Reference
 1. [SIGGRAPH 2020 Course](https://blog.selfshadow.com/publications/s2020-shading-course/)

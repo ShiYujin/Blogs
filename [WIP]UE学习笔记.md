@@ -337,9 +337,28 @@ void SetGBufferForShadingModel(
 
 4. 修改DeferredShading BasePass的Pixel Shader，这里需要利用宏`MATERIAL_SHADINGMODEL_ADVANCEDCLOTH`和enum`SHADINGMODELID_ADVANCEDCLOTH`来规划路径，指定新加入的Shading Model需要有哪些操作：`Engine\Shaders\Private\BasePassPixelShader.usf`:`void FPixelShaderInOut_MainPS`:
 
+各向异性材质需要修改的地方：
 
-SHADINGMODELID_ADVANCEDCLOTH:
+<!-- Engine\Source\Runtime\Engine\Private\Materials\HLSLMaterialTranslator.cpp
+bool FHLSLMaterialTranslator::Translate()，设置bUsesAnisotropy为true -->
 
+Engine\Source\Runtime\Engine\Private\Materials\MaterialInterface.cpp
+FMaterialRelevance UMaterialInterface::GetRelevance_Internal(const UMaterial* Material, ERHIFeatureLevel::Type InFeatureLevel) const下，bool bUsesAnisotropy的值。
+
+Engine\Source\Runtime\Engine\Private\Materials\Material.cpp
+static bool IsPropertyActive_Internal，case MP_Anisotropy:，打开MP_Anisotropy参数，如果需要同时打开MP_Tangent参数
+
+Engine\Source\Runtime\Engine\Private\Materials\MaterialShared.cpp
+FText FMaterialAttributeDefinitionMap::GetAttributeOverrideForMaterial(const FGuid& AttributeID, UMaterial* Material)，case MP_Anisotropy:，修改Anisotropy的名字
+
+Engine\Source\Runtime\Renderer\Private\PrimitiveSceneInfo.cpp
+virtual void DrawMesh(const FMeshBatch& Mesh, float ScreenSize) final override: bool bUseAnisotropy = Material->GetShadingModels().HasAnyShadingModel({MSM_DefaultLit, MSM_ClearCoat, MSM_xxxx})
+
+Engine\Source\Runtime\Renderer\Private\AnisotropyRendering.cpp
+static bool IsAnisotropyPassCompatible(FMaterialShaderParameters MaterialParameters): MaterialParameters.ShadingModels.HasAnyShadingModel({ MSM_DefaultLit, MSM_ClearCoat, MSM_xxxx });
+
+Engine\Source\Runtime\Renderer\Private\AnisotropyRendering.cpp
+void FAnisotropyMeshProcessor::AddMeshBatch(...): Material->GetShadingModels().HasAnyShadingModel({ MSM_DefaultLit, MSM_ClearCoat, MSM_xxxx})
 
 ### UE4的Preintegrated Skin Shading MOdel
 相对于GPU Pro 2中介绍的完整的Preintegrated Skin Shading，UE4的model
@@ -369,4 +388,54 @@ FDirectLighting PreintegratedSkinBxDF( FGBufferData GBuffer, half3 N, half3 V, h
 用visualization工具显示一下shading model，看是否是正确的shading model
 
 Engine\Source\Runtime\Engine\Classes\Engine\EngineTypes.h 下面定义的`EMaterialShadingModel`序号，必须和Engine\Shaders\Private\ShadingCommon.ush定义的`SHADINGMODELID_XXX`一致
+
+## Editor/Toolbar/Module
+如何在editor打开以后，自动调用一个Plugin Module的函数
+
+如何动态设置toolbar/widget的enable/disable属性
+
+## Command相关/用插件拓展编辑器菜单
+https://zhuanlan.zhihu.com/p/338067229
+https://cheneyshen.com/unreal-%E7%BC%96%E8%BE%91%E5%99%A8%E6%89%A9%E5%B1%95/
+
+## 延迟渲染管线剖析
+
+## BufferVisiualization剖析
+本质是Material node材质节点
+
+## 添加新的DebugView
+DebugView是UE4内置的一套调试工具接口，用于在Preview Editor显示一些调试信息。基于这一套内置接口，UE4已经实现了几个功能：
+
+- ShaderComplexity
+- ShaderComplexityContainedQuadOverhead
+- ShaderComplexityBleedingQuadOverhead
+- QuadComplexity
+- PrimitiveDistanceAccuracy
+- MeshUVDensityAccuracy
+- MaterialTextureScaleAccuracy
+- OutputMaterialTextureScales
+- RequiredTextureResolution
+- LODColoration
+
+这些接口在View
+这一套接口的优点在于
+
+- 接口很详细，可以在现有架构上开发
+- 只需要写Pixel shader，可以自定义shader内容
+
+
+
+EDebugViewShaderMode::DVSM_ShaderComplexity
+
+EViewModeIndex::VMI_ShaderComplexity
+
+FEditorViewportCommands::TSharedPtr< FUICommandInfo > ShaderComplexityMode
+
+FEngineShowFlags::ShaderComplexity
+
+PS继承自FDebugViewModePS
+
+Interface继承自FDebugViewModeInterface
+
+如果需要postprocess添加UI，则在`Engine\Source\Runtime\Renderer\Private\PostProcess\`下创建一个添加pass的函数，并在`Engine\Source\Runtime\Renderer\Private\PostProcess\PostProcessing.cpp`:`AddDebugViewPostProcessingPasses`调用
 
