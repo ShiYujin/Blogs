@@ -1,10 +1,3 @@
-<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
-<script type="text/x-mathjax-config">
-    MathJax.Hub.Config({
-      tex2jax: {
-     inlineMath: [['$', '$']]}, messageStyle: "none" });
-</script>
-
 # SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima - part 1
 SIGGRAPH 2020 Course: Samurai Shading in Ghost of Tsushima主要分享了《对马岛之魂》这款游戏中的一些图形学技术，包括
 
