@@ -1,5 +1,8 @@
 # UE源码学习笔记
 
+## UE asset discovery system
+[TODO]
+
 ## NewObject
 创建新的类为什么用模板`NewObject`？
 例子：Engine\Source\Runtime\Engine\Private\PreviewScene.cpp
@@ -46,9 +49,140 @@ FUNCTION_NON_NULL_RETURN_END
 
 ## 智能指针
 
+## FName/FText/FString
+### FName to FString
+`TestHUDString = TestHUDName.ToString();`
+### FName to FText
+`TestHUDText = FText::FromName(TestHUDName);`
+### FString to FName
+`TestHUDName = FName(*TestHUDString);`
+### FText to FName
+FText->FString->FName
+### FString to FText
+`FText::FromString(String)`
+### FText to FString
+`Text.ToString()`
+
+Ref：
+[FName](https://docs.unrealengine.com/4.27/en-US/ProgrammingAndScripting/ProgrammingWithCPP/UnrealArchitecture/StringHandling/FName/)
+[FText](https://docs.unrealengine.com/4.27/en-US/ProgrammingAndScripting/ProgrammingWithCPP/UnrealArchitecture/StringHandling/FText/)
+
+## for循环
+`TMultiMap`的for循环：
+```C++
+for(TMultiMap<FString, TSharedPtrTS<FManifestHLSInternal::FRendition>>::TConstIterator It = MultiMapObj.CreateConstIterator(); It; ++It)
+{
+	It.Key();
+	It.Value();
+}
+```
+
 ## 配置保存.ini
 
 ## UE的全局变量
+
+## Log System
+### Header File
+UE_LOG的声明需要放在头文件里，声明宏如下：
+
+```
+DECLARE_LOG_CATEGORY_EXTERN(LogCustom, Log, All);
+```
+
+### Cpp File
+如果在cpp文件使用UE_LOG，需要在CPP里声明这个：
+
+```
+DEFINE_LOG_CATEGORY(LogCustom);
+```
+
+声明一次就可以了。
+
+如果在头文件使用UE_LOG，不需要使用这个宏。
+
+### Use
+使用的方法如下：
+
+```
+UE_LOG(LogCustom, Warning, TEXT("The integer value is: %d"), YourInteger);
+```
+
+
+## Shader
+### FGlobalShader与FMaterialShader
+UE有两种shader类型：FGlobalShader只有一个实例存在。FMaterialShader与materail绑定。
+
+FGlobalShader
+
+FMaterialShader/FmeshMaterialShader
+
+## 纹理格式
+FTexture
+
+FRHITexture
+
+FRDGTexture
+
+### 全局Texture资源
+包括空白的黑色、白色的各种格式的Texture，见`Engine\Source\Runtime\RenderCore\Public\RenderUtils.h`:
+
+```C++
+/** A global white texture. */
+RENDERCORE_API FTexture* GWhiteTexture;
+RENDERCORE_API FTextureWithSRV* GWhiteTextureWithSRV;
+
+/** A global black texture. */
+RENDERCORE_API FTexture* GBlackTexture;
+RENDERCORE_API FTextureWithSRV* GBlackTextureWithSRV;
+RENDERCORE_API FTextureWithSRV* GBlackTextureWithUAV;
+
+RENDERCORE_API FTexture* GTransparentBlackTexture;
+RENDERCORE_API FTextureWithSRV* GTransparentBlackTextureWithSRV;
+
+RENDERCORE_API FVertexBufferWithSRV* GEmptyVertexBufferWithUAV;
+
+RENDERCORE_API FVertexBufferWithSRV* GWhiteVertexBufferWithSRV;
+
+/** A global black array texture. */
+RENDERCORE_API FTexture* GBlackArrayTexture;
+
+/** A global black volume texture. */
+RENDERCORE_API FTextureWithRDG* GBlackVolumeTexture;
+
+/** A global black volume texture, with alpha=1. */
+RENDERCORE_API FTextureWithRDG* GBlackAlpha1VolumeTexture;
+
+/** A global black texture<uint> */
+RENDERCORE_API FTexture* GBlackUintTexture;
+
+/** A global black volume texture<uint>  */
+RENDERCORE_API FTextureWithRDG* GBlackUintVolumeTexture;
+
+/** A global white cube texture. */
+RENDERCORE_API FTexture* GWhiteTextureCube;
+
+/** A global black cube texture. */
+RENDERCORE_API FTexture* GBlackTextureCube;
+
+/** A global black cube depth texture. */
+RENDERCORE_API FTexture* GBlackTextureDepthCube;
+
+/** A global black cube array texture. */
+RENDERCORE_API FTexture* GBlackCubeArrayTexture;
+
+/** A global texture that has a different solid color in each mip-level. */
+RENDERCORE_API FTexture* GMipColorTexture;
+
+/** Number of mip-levels in 'GMipColorTexture' */
+RENDERCORE_API int32 GMipColorTextureMipLevels;
+
+// 4: 8x8 cubemap resolution, shader needs to use the same value as preprocessing
+RENDERCORE_API const uint32 GDiffuseConvolveMipLevel;
+
+/** The indices for drawing a cube. */
+RENDERCORE_API const uint16 GCubeIndices[36];
+
+```
 
 ## Shading model
 ### 如何添加一个新的Shading model
@@ -399,9 +533,48 @@ https://zhuanlan.zhihu.com/p/338067229
 https://cheneyshen.com/unreal-%E7%BC%96%E8%BE%91%E5%99%A8%E6%89%A9%E5%B1%95/
 
 ## 延迟渲染管线剖析
+### 光照的组成部分
+相关pass，函数和ShowFlags：
+
+- BasePass
+  - GBuffer.DiffuseColor
+- DiffuseIndirectAndAO
+- Lights
+  - EngineShowFlags.DirectLighting
+- ReflectionEnvironmentAndSky
+  - SkyLightDiffuse
+    - EngineShowFlags.SkyLighting && EngineShowFlags.AmbientOcclusion
+  - ScreenSpaceReflections
+  - TAA ScreenSpaceReflections
+  - ReflectionEnvironmentAndSky
+    - EngineShowFlags.SkyLighting && EngineShowFlags.ReflectionEnvironment && ?
+- AtmosphericFog
+  - RenderAtmosphere()
+    - EngineShowFlags.Atmosphere && EngineShowFlags.Fog
+- SkyAtmosphere
+  - RenderSkyAtmosphere()
+    - EngineShowFlags.Atmosphere
+
+### Forward shading
+- CalcGIAndAO
+  - CalcSMobileTODGIAndAO()
+    - View.IndirectLightingColorScale
+  - Indirect Diffuse
+    - View.IndirectLightingColorScale
+  - 
+- CalcDirectionalLighting
+- CalcImageBasedLighting
+- CalcSkyLighting
+- CalcPointLighting
+- CalcEmissive
+- CalcSingleLayerWater
+- CalcThinTranslucent
 
 ## BufferVisiualization剖析
 本质是Material node材质节点
+
+## ViewExtension
+定义在`Engine\Source\Runtime\Engine\Public\SceneViewExtension.h`，
 
 ## 添加新的DebugView
 DebugView是UE4内置的一套调试工具接口，用于在Preview Editor显示一些调试信息。基于这一套内置接口，UE4已经实现了几个功能：
@@ -437,5 +610,14 @@ PS继承自FDebugViewModePS
 
 Interface继承自FDebugViewModeInterface
 
-如果需要postprocess添加UI，则在`Engine\Source\Runtime\Renderer\Private\PostProcess\`下创建一个添加pass的函数，并在`Engine\Source\Runtime\Renderer\Private\PostProcess\PostProcessing.cpp`:`AddDebugViewPostProcessingPasses`调用
+如果需要在postprocess添加UI，则在`Engine\Source\Runtime\Renderer\Private\PostProcess\`下创建一个添加pass的函数，并在`Engine\Source\Runtime\Renderer\Private\PostProcess\PostProcessing.cpp`:`AddDebugViewPostProcessingPasses`调用
 
+## 编译问题
+### error MSB3073
+```
+1>C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Microsoft\VC\v160\Microsoft.MakeFile.Targets(45,5): error MSB3073: 命令“F:\FFWGame_proj\Client\UnrealEngine\Engine\Build\BatchFiles\Build.bat -Target="FFGameEditor Win64 Development -Project=\"F:\FFWGame_proj\Client\FFGame\FFGame.uproject\"" -Target="ShaderCompileWorker Win64 Development -Quiet" -WaitMutex -FromMsBuild”已退出，代码为 6。
+```
+
+关键字：`error MSB3073`, `exited with code 6`
+
+解决方案：关闭进程`shaderComplieWorker`，或者参考https://stackoverflow.com/questions/63527007/cannot-compile-unreal-engine-4-25-with-visual-studio-2019-7-2

@@ -1,7 +1,5 @@
 # Culling
 
-
-
 ## UE4支持的Culling方法和设置
 UE4一共支持4中Culling方法。
 
@@ -143,6 +141,12 @@ Cull distance pair需要反复调整，根据volume内物体的大小设置合�
 ![occluded primitive](images/Culling/visualize%20occluded%20primitive.png)
 
 被遮挡的primitive会用绿色的方框框起来。
+
+## UE4 Culling实现细节
+### Occlusion query
+
+### HZB
+### Precomputed visibility volume
 
 ## Reference
 [UE文档 - Visibility and culling](https://docs.unrealengine.com/4.26/en-US/RenderingAndGraphics/VisibilityCulling/)
